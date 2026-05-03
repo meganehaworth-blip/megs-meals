@@ -808,6 +808,8 @@ function runMealPlannerTests() {
   console.assert(CLOUD_TABLE === "meal_planner_profiles", "Test failed: cloud table name should match Supabase table");
   console.assert(defaultCloudData({ name: "Test", email: "test@example.com" }).planner.Wednesday === "", "Test failed: default cloud planner should start blank");
   console.assert(getVisibleEssentials({ [deletedEssentialKey("Cupboard", "Pasta")]: true }).Cupboard.includes("Pasta") === false, "Test failed: deleted essentials should be hidden");
+  console.assert(getVisibleEssentials({}).Cupboard.join("|") === [...getVisibleEssentials({}).Cupboard].sort((a, b) => a.localeCompare(b)).join("|"), "Test failed: essentials should be alphabetical within aisle");
+  console.assert(estimateItemCost(ing("Chicken breasts", "500g", "Meat & Fish")) > 0, "Test failed: item cost should be shown per shopping item");
 }
 
 function Icon({ children }) {
@@ -839,6 +841,7 @@ export default function MealPlannerApp() {
   const [essentialChecks, setEssentialChecks] = useState(() => (!supabase && profile?.email ? loadAccountValue(profile.email, "essential_checks", {}) : {}));
   const [shoppingChecks, setShoppingChecks] = useState(() => (!supabase && profile?.email ? loadAccountValue(profile.email, "shopping_checks", {}) : {}));
   const [query, setQuery] = useState("");
+  const [plannerMealSearch, setPlannerMealSearch] = useState("");
   const [newMeal, setNewMeal] = useState({ name: "", type: "", category: "Chicken", caloriesPerServing: "", servings: "4", ingredient: "", qty: "", aisle: "Fruit & Veg", method: "" });
   const [newEssential, setNewEssential] = useState({ name: "", aisle: "Fruit & Veg" });
   const [expandedDay, setExpandedDay] = useState(null);
@@ -899,6 +902,17 @@ export default function MealPlannerApp() {
   }, [authUser?.id, profile?.email, meals, planner, essentialChecks, shoppingChecks]);
 
   const mealGroups = useMemo(() => groupMealsByCategory(meals), [meals]);
+  const plannerMealGroups = useMemo(() => {
+    const search = normalise(plannerMealSearch);
+    const matches = !search
+      ? meals
+      : meals.filter((meal) =>
+          normalise(meal.name).includes(search) ||
+          normalise(meal.type).includes(search) ||
+          normalise(meal.category).includes(search)
+        );
+    return groupMealsByCategory(matches);
+  }, [meals, plannerMealSearch]);
   const shoppingList = useMemo(() => buildShoppingList(planner, meals, essentialChecks), [planner, meals, essentialChecks]);
   const estimatedShoppingCost = useMemo(() => estimateShoppingCost(shoppingList), [shoppingList]);
   const trolleyStatus = useMemo(() => trolleyReadyStatus(shoppingList, shoppingChecks), [shoppingList, shoppingChecks]);
@@ -1281,6 +1295,10 @@ export default function MealPlannerApp() {
                 <div>
                   <h2 className="text-xl font-black">🍽 Weekly food planner</h2>
                   <p className="text-sm text-zinc-600">Choose meals and the shopping list updates automatically. Tap a day to show or hide its ingredients.</p>
+                  <div className="mt-3 max-w-md">
+                    <label className="mb-1 block text-xs font-black uppercase tracking-wide text-zinc-500">Search meal names or types</label>
+                    <input value={plannerMealSearch} onChange={(e) => setPlannerMealSearch(e.target.value)} placeholder="e.g. quick tea, family favourite, slow cooker, air fryer" className="w-full rounded-2xl bg-zinc-50 px-4 py-3 text-sm ring-1 ring-zinc-200" />
+                  </div>
                 </div>
                 <div className="flex flex-col items-start gap-2 sm:items-end">
                   <div className="rounded-2xl bg-emerald-50 px-4 py-2 text-left ring-1 ring-emerald-100 sm:text-right">
@@ -1302,7 +1320,7 @@ export default function MealPlannerApp() {
                     <select value={planner[day] || ""} onChange={(e) => setPlanner({ ...planner, [day]: e.target.value })} className="w-full rounded-2xl border-0 bg-white px-3 py-3 text-sm shadow-sm ring-1 ring-zinc-200">
                       <option value="">No meal selected</option>
                       <option value="LEFTOVERS">LEFTOVERS</option>
-                      {Object.entries(mealGroups).map(([category, categoryMeals]) => (
+                      {Object.entries(plannerMealGroups).map(([category, categoryMeals]) => (
                         <optgroup key={category} label={`${categoryIcon[category] || "🍽️"} ${category}`}>
                           {categoryMeals.map((meal) => <option key={meal.name} value={meal.name}>{meal.name}</option>)}
                         </optgroup>
@@ -1365,7 +1383,7 @@ export default function MealPlannerApp() {
                         return (
                           <label key={key} className={`flex cursor-pointer items-start gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-100 ${shoppingChecks[key] ? "opacity-45" : ""}`}>
                             <input type="checkbox" checked={!!shoppingChecks[key]} onChange={(e) => setShoppingChecks({ ...shoppingChecks, [key]: e.target.checked })} className="mt-1 h-5 w-5" />
-                            <span className="flex-1"><span className={`block font-bold ${shoppingChecks[key] ? "line-through" : ""}`}>{item.name}</span><span className="block text-sm text-zinc-500">{item.qty || "No qty"} · {item.sources.join(", ")}</span></span>
+                            <span className="flex-1"><span className={`block font-bold ${shoppingChecks[key] ? "line-through" : ""}`}>{item.name}</span><span className="block text-sm text-zinc-500">{item.qty || "No qty"} · {item.sources.join(", ")}</span><span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">Est. £{estimateItemCost(item).toFixed(2)}</span></span>
                           </label>
                         );
                       })}
