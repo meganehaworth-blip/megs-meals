@@ -779,6 +779,30 @@ function nextExpandedMeal(currentMeal, clickedMeal) {
   return currentMeal === clickedMeal ? null : clickedMeal;
 }
 
+function updateIngredientAtIndex(mealList, mealName, ingredientIndex, updates) {
+  return mealList.map((meal) => {
+    if (meal.name !== mealName) return meal;
+    return {
+      ...meal,
+      ingredients: meal.ingredients.map((item, index) => (index === ingredientIndex ? { ...item, ...updates } : item)),
+    };
+  });
+}
+
+function deleteIngredientAtIndex(mealList, mealName, ingredientIndex) {
+  return mealList.map((meal) => {
+    if (meal.name !== mealName) return meal;
+    return {
+      ...meal,
+      ingredients: meal.ingredients.filter((_, index) => index !== ingredientIndex),
+    };
+  });
+}
+
+function updateMealMethodByName(mealList, mealName, method) {
+  return mealList.map((meal) => (meal.name === mealName ? { ...meal, method } : meal));
+}
+
 function runMealPlannerTests() {
   const testMeals = [
     recipe("Pasta night", "Vegetarian", "Test", 4, [ing("Pasta", "500g", "Cupboard"), ing("Tomatoes", "1 tin", "Cupboard")], `1. Cook.`),
@@ -795,6 +819,9 @@ function runMealPlannerTests() {
   console.assert(nextExpandedDay("Monday", "Monday") === null, "Test failed: clicking open day should close it");
   console.assert(nextExpandedMeal(null, "Burgers") === "Burgers", "Test failed: clicking closed meal should open it");
   console.assert(nextExpandedMeal("Burgers", "Burgers") === null, "Test failed: clicking open meal should close it");
+  console.assert(updateIngredientAtIndex([recipe("Meal", "Other", "Test", 1, [ing("Old", "1", "Other")], "1. Cook")], "Meal", 0, { name: "New" })[0].ingredients[0].name === "New", "Test failed: ingredient should edit by index");
+  console.assert(deleteIngredientAtIndex([recipe("Meal", "Other", "Test", 1, [ing("A"), ing("B")], "1. Cook")], "Meal", 0)[0].ingredients.length === 1, "Test failed: ingredient should delete by index");
+  console.assert(updateMealMethodByName([recipe("Meal", "Other", "Test", 1, [], "Old")], "Meal", "New")[0].method === "New", "Test failed: method should be editable");
   console.assert(typeof seedMeals[0].method === "string" && seedMeals[0].method.includes("1."), "Test failed: methods should be readable strings");
   console.assert(cleanMealTitle("Air Fryer Baked Feta Pasta") === "Baked Feta Pasta", "Test failed: Air Fryer should be removed from meal titles");
   console.assert(cleanMealTitle("Slow Cooker Butter Chicken") === "Butter Chicken", "Test failed: Slow Cooker should be removed from meal titles");
@@ -1153,6 +1180,18 @@ export default function MealPlannerApp() {
     setMeals((prev) => prev.map((meal) => (meal.name === mealName ? { ...meal, ingredients: [...meal.ingredients, ing(ingredientName, qty, AISLES.includes(aisle) ? aisle : "Other")] } : meal)));
   }
 
+  function editIngredient(mealName, ingredientIndex, updates) {
+    setMeals((prev) => updateIngredientAtIndex(prev, mealName, ingredientIndex, updates));
+  }
+
+  function removeIngredient(mealName, ingredientIndex) {
+    setMeals((prev) => deleteIngredientAtIndex(prev, mealName, ingredientIndex));
+  }
+
+  function editMealMethod(mealName, method) {
+    setMeals((prev) => updateMealMethodByName(prev, mealName, method));
+  }
+
   function deleteMeal(name) {
     setMeals((prev) => prev.filter((meal) => meal.name !== name));
     setPlanner((prev) => Object.fromEntries(Object.entries(prev).map(([day, meal]) => [day, cleanMealTitle(meal) === cleanMealTitle(name) ? "" : meal])));
@@ -1462,8 +1501,24 @@ export default function MealPlannerApp() {
                     {expandedMeal === meal.name && (
                       <>
                         <div className="mt-3 space-y-2">
-                          {meal.ingredients.length === 0 ? <p className="text-sm text-zinc-500">No ingredients yet.</p> : meal.ingredients.map((item, index) => <div key={`${item.name}-${index}`} className="rounded-2xl bg-white p-3 text-sm shadow-sm ring-1 ring-zinc-100"><span className="font-bold">{item.name}</span><span className="text-zinc-500"> · {item.qty || "No qty"} · {aisleIcon[item.aisle] || "🛒"} {item.aisle}</span></div>)}
-                          <div className="rounded-2xl bg-orange-50 p-3 text-sm ring-1 ring-orange-100"><p className="mb-1 text-xs font-black uppercase tracking-wide text-orange-800">Method</p><MethodList method={meal.method || "No method added yet."} /></div>
+                          {meal.ingredients.length === 0 ? <p className="text-sm text-zinc-500">No ingredients yet.</p> : meal.ingredients.map((item, index) => (
+                            <div key={`${item.name}-${index}`} className="grid gap-2 rounded-2xl bg-white p-3 text-sm shadow-sm ring-1 ring-zinc-100">
+                              <div className="grid gap-2 sm:grid-cols-[1fr_120px_150px_auto]">
+                                <input value={item.name} onChange={(e) => editIngredient(meal.name, index, { name: e.target.value })} className="rounded-xl bg-zinc-50 px-3 py-2 text-sm font-bold ring-1 ring-zinc-100" placeholder="Ingredient" />
+                                <input value={item.qty || ""} onChange={(e) => editIngredient(meal.name, index, { qty: e.target.value })} className="rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-100" placeholder="Qty" />
+                                <select value={item.aisle || "Other"} onChange={(e) => editIngredient(meal.name, index, { aisle: e.target.value })} className="rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-100">
+                                  {AISLES.map((aisle) => <option key={aisle}>{aisle}</option>)}
+                                </select>
+                                <button type="button" onClick={() => removeIngredient(meal.name, index)} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 ring-1 ring-red-100">Delete</button>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="rounded-2xl bg-orange-50 p-3 text-sm ring-1 ring-orange-100">
+                            <p className="mb-2 text-xs font-black uppercase tracking-wide text-orange-800">Method</p>
+                            <textarea value={meal.method || ""} onChange={(e) => editMealMethod(meal.name, e.target.value)} className="min-h-36 w-full rounded-2xl bg-white px-4 py-3 text-sm leading-relaxed ring-1 ring-orange-100" placeholder="Add method steps here" />
+                            <p className="mt-2 text-xs font-bold text-orange-800">Preview</p>
+                            <MethodList method={meal.method || "No method added yet."} />
+                          </div>
                         </div>
                         <button onClick={() => addIngredient(meal.name)} className="mt-3 rounded-2xl bg-white px-4 py-2 text-sm font-bold shadow-sm ring-1 ring-zinc-100">＋ Add ingredient</button>
                       </>
