@@ -552,18 +552,51 @@ async function fetchCloudData(userId) {
   return data;
 }
 
+async function getConfirmedSupabaseUser() {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getUser();
+  if (error) return null;
+  return data?.user || null;
+}
+
 async function upsertCloudData(userId, email, payload) {
   if (!supabase || !userId) return;
-  const { error } = await supabase.from(CLOUD_TABLE).upsert({
-    user_id: userId,
-    email,
-    profile: payload.profile,
-    meals: payload.meals,
-    planner: payload.planner,
-    essential_checks: payload.essential_checks,
-    shopping_checks: payload.shopping_checks,
-    updated_at: new Date().toISOString(),
-  });
+
+  const confirmedUser = await getConfirmedSupabaseUser();
+  if (!confirmedUser?.id || confirmedUser.id !== userId) {
+    throw new Error("Not signed in to Supabase yet. Please sign out, then sign in again.");
+  }
+
+  const { error } = await supabase.from(CLOUD_TABLE).upsert(
+    {
+      user_id: confirmedUser.id,
+      email,
+      profile: payload.profile,
+      meals: payload.meals,
+      planner: payload.planner,
+      essential_checks: payload.essential_checks,
+      shopping_checks: payload.shopping_checks,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+  if (error) throw error;
+}base yet. Please sign out, then sign in again.");
+  }
+
+  const { error } = await supabase.from(CLOUD_TABLE).upsert(
+    {
+      user_id: confirmedUser.id,
+      email,
+      profile: payload.profile,
+      meals: payload.meals,
+      planner: payload.planner,
+      essential_checks: payload.essential_checks,
+      shopping_checks: payload.shopping_checks,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
   if (error) throw error;
 }
 
@@ -782,9 +815,17 @@ export default function MealPlannerApp() {
   const [expandedDay, setExpandedDay] = useState(null);
 
   useEffect(() => save("mp_profile", profile), [profile]);
-  useEffect(() => saveAccountValue(profile?.email, "meals", meals), [profile?.email, meals]);
-  useEffect(() => saveAccountValue(profile?.email, "planner", planner), [profile?.email, planner]);
-  useEffect(() => saveAccountValue(profile?.email, "essential_checks", essentialChecks), [profile?.email, essentialChecks]);
+  useEffect(() => saveAccountValue(profile?.email, "meals", meals), [profile?.email, meals])supabase.auth.getSession().then(async ({ data }) => {
+      if (!mounted) return;
+      const user = data.session?.user || null;
+      setAuthUser(user);
+      if (user?.email) {
+        await loadSupabaseAccount(user);
+      } else {
+        setProfile(null);
+        setSyncStatus("Please sign in to sync with Supabase");
+      }
+    });Checks]);
   useEffect(() => saveAccountValue(profile?.email, "shopping_checks", shoppingChecks), [profile?.email, shoppingChecks]);
   useEffect(() => runMealPlannerTests(), []);
 
@@ -795,7 +836,12 @@ export default function MealPlannerApp() {
       if (!mounted) return;
       const user = data.session?.user || null;
       setAuthUser(user);
-      if (user?.email) await loadSupabaseAccount(user);
+      if (user?.email) {
+        await loadSupabaseAccount(user);
+      } else {
+        setProfile(null);
+        setSyncStatus("Please sign in to sync with Supabase");
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const user = session?.user || null;
@@ -837,11 +883,9 @@ export default function MealPlannerApp() {
   }
 
   function mealIngredients(mealName) {
-    return getMealByName(mealName)?.ingredients || [];
-  }
-
-  function mealMethod(mealName) {
-    return getMealByName(mealName)?.method || "No method added yet.";
+    return getMealByName(mealNasync function loadSupabaseAccount(user) {
+    if (!supabase || !user?.id) return;
+    try {lName)?.method || "No method added yet.";
   }
 
   function toggleDay(day) {
@@ -867,20 +911,21 @@ export default function MealPlannerApp() {
     try {
       setIsSyncing(true);
       setSyncStatus("Loading cloud planner...");
-      const cloud = await fetchCloudData(user.id);
+      const confirmedUser = await getConfirmedSupabaseUser();
+      if (!confirmedUser?.id || confirmedUser.id !== user.id) {
+        setProfile(null);
+        setSyncStatus("Please sign in again to start cloud sync.");
+        return;
+      }
+      const cloud = await fetchCloudData(confirmedUser.id);
       const email = user.email.toLowerCase();
-      const fallbackProfile = { name: user.user_metadata?.name || email.split("@")[0], email, joinedAt: user.created_at || new Date().toISOString() };
+     joinedAt: user.created_at || new Date().toISOString() };
       const nextData = cloud || defaultCloudData(fallbackProfile);
       const nextProfile = nextData.profile || fallbackProfile;
 
       setProfile(nextProfile);
       setMeals(mergeMeals(nextData.meals || [], seedMeals));
-      setPlanner(nextData.planner || initialPlanner);
-      setEssentialChecks(nextData.essential_checks || {});
-      setShoppingChecks(nextData.shopping_checks || {});
-      applyCloudDataToLocal(email, nextData);
-
-      if (!cloud) await upsertCloudData(user.id, email, { ...nextData, profile: nextProfile });
+      setPlanner(nextData.plsertCloudData(confirmedUser.id, email, { ...nextData, profile: nextProfile });
       setSyncStatus("Synced with Supabase");
     } catch (error) {
       console.error(error);
@@ -893,8 +938,13 @@ export default function MealPlannerApp() {
   async function saveSupabaseAccount() {
     if (!supabase || !authUser?.id || !profile?.email) return;
     try {
+      const confirmedUser = await getConfirmedSupabaseUser();
+      if (!confirmedUser?.id || confirmedUser.id !== authUser.id) {
+        setSyncStatus("Please sign in again to save to Supabase.");
+        return;
+      }
       setSyncStatus("Saving to Supabase...");
-      await upsertCloudData(authUser.id, profile.email, {
+      await upsertCloudData(confirmedUser.id, profile.email, {
         profile,
         meals,
         planner,
@@ -922,20 +972,20 @@ export default function MealPlannerApp() {
         setSyncStatus("Signing in...");
         let { data, error } = await supabase.auth.signInWithPassword({ email, password: signup.password });
         if (error) {
-          const signUpResult = await supabase.auth.signUp({
-            email,
-            password: signup.password,
-            options: { data: { name: signup.name.trim() } },
-          });
-          data = signUpResult.data;
-          error = signUpResult.error;
+          const signUpResulterror;
         }
         if (error) throw error;
-        const user = data.user;
-        if (user) {
-          await loadSupabaseAccount(user);
+        const sessionUser = data.session?.user || null;
+        const user = sessionUser || data.user;
+        if (sessionUser) {
+          setAuthUser(sessionUser);
+          await loadSupabaseAccount(sessionUser);
           setTab("planner");
+        } else if (user) {
+          setProfile(null);
+          setSyncStatus("Account created. Check your email to confirm it, then sign in again.");
         } else {
+          setProfile(null);
           setSyncStatus("Check your email to confirm your account, then sign in again.");
         }
       } catch (error) {
