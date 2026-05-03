@@ -1115,10 +1115,11 @@ export default function MealPlannerApp() {
               <h2 className="text-2xl font-black">Sign in to your meal planner</h2>
               <p className="mt-2 text-sm text-zinc-600">Each email address gets its own Supabase account and cloud-saved planner. If Supabase keys are missing, it falls back to this browser only.</p>
               <div className="mt-5 grid gap-3 text-left">
-                <div className="mb-2 grid grid-cols-2 gap-2 rounded-2xl bg-zinc-50 p-1 ring-1 ring-zinc-200">
-                  <button type="button" onClick={() => setAuthMode("signin")} className={`rounded-xl px-3 py-2 text-sm font-black ${authMode === "signin" ? "bg-white shadow-sm" : "text-zinc-500"}`}>Sign in</button>
-                  <button type="button" onClick={() => setAuthMode("signup")} className={`rounded-xl px-3 py-2 text-sm font-black ${authMode === "signup" ? "bg-white shadow-sm" : "text-zinc-500"}`}>Create account</button>
+                <div className="mb-2 grid gap-2 rounded-2xl bg-zinc-50 p-2 ring-1 ring-zinc-200 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setAuthMode("signin"); setSyncStatus("Sign in mode selected"); }} className={`rounded-xl px-3 py-3 text-sm font-black ${authMode === "signin" ? "bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-100" : "bg-transparent text-zinc-500"}`}>Sign in to existing account</button>
+                  <button type="button" onClick={() => { setAuthMode("signup"); setSyncStatus("Create account mode selected"); }} className={`rounded-xl px-3 py-3 text-sm font-black ${authMode === "signup" ? "bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-100" : "bg-transparent text-zinc-500"}`}>Create new account</button>
                 </div>
+                <p className="rounded-2xl bg-white px-3 py-2 text-center text-xs font-bold text-zinc-500 ring-1 ring-zinc-100">{authMode === "signup" ? "Create account mode: enter your name, email and password." : "Sign in mode: use an existing confirmed account."}</p>
                 {authMode === "signup" && <><label className="text-sm font-bold">Name</label>
                 <input value={signup.name} onChange={(e) => setSignup({ ...signup, name: e.target.value })} placeholder="e.g. Megan" className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm ring-1 ring-zinc-200" /></>}
                 <label className="text-sm font-bold">Email</label>
@@ -1126,6 +1127,10 @@ export default function MealPlannerApp() {
                 <label className="text-sm font-bold">Password</label>
                 <input value={signup.password} onChange={(e) => setSignup({ ...signup, password: e.target.value })} placeholder="At least 6 characters" type="password" className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm ring-1 ring-zinc-200" />
                 <button onClick={completeSignup} disabled={!signup.email.trim() || (supabase && signup.password.length < 6)} className="mt-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40">🔐 {authMode === "signup" ? "Create account" : "Sign in and start planning"}</button>
+                <button type="button" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setSyncStatus(authMode === "signup" ? "Sign in mode selected" : "Create account mode selected"); }} className="rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-bold text-zinc-700">
+                  {authMode === "signup" ? "Already have an account? Sign in" : "Need an account? Create one"}
+                </button>
+                <p className="text-center text-xs font-bold text-zinc-500">{syncStatus}</p>
               </div>
               <p className="mt-4 text-xs text-zinc-500">Supabase mode uses real email/password auth and cloud data. Local-only mode appears when your Supabase environment variables are missing.</p>
             </div>
@@ -1145,10 +1150,11 @@ export default function MealPlannerApp() {
 
             {!profile ? (
               <div className="mt-5 grid gap-3 rounded-3xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
-                <div className="mb-2 grid grid-cols-2 gap-2 rounded-2xl bg-white p-1 ring-1 ring-emerald-100">
-                  <button type="button" onClick={() => setAuthMode("signin")} className={`rounded-xl px-3 py-2 text-sm font-black ${authMode === "signin" ? "bg-emerald-100" : "text-zinc-500"}`}>Sign in</button>
-                  <button type="button" onClick={() => setAuthMode("signup")} className={`rounded-xl px-3 py-2 text-sm font-black ${authMode === "signup" ? "bg-emerald-100" : "text-zinc-500"}`}>Create account</button>
+                <div className="mb-2 grid gap-2 rounded-2xl bg-white p-2 ring-1 ring-emerald-100 sm:grid-cols-2">
+                  <button type="button" onClick={() => { setAuthMode("signin"); setSyncStatus("Sign in mode selected"); }} className={`rounded-xl px-3 py-3 text-sm font-black ${authMode === "signin" ? "bg-emerald-100 text-emerald-800" : "text-zinc-500"}`}>Sign in to existing account</button>
+                  <button type="button" onClick={() => { setAuthMode("signup"); setSyncStatus("Create account mode selected"); }} className={`rounded-xl px-3 py-3 text-sm font-black ${authMode === "signup" ? "bg-emerald-100 text-emerald-800" : "text-zinc-500"}`}>Create new account</button>
                 </div>
+                <p className="rounded-2xl bg-white px-3 py-2 text-center text-xs font-bold text-zinc-500 ring-1 ring-emerald-100">{authMode === "signup" ? "Create account mode: enter your name, email and password." : "Sign in mode: use an existing confirmed account."}</p>
                 {authMode === "signup" && <><label className="text-sm font-bold">Name</label>
                 <input value={signup.name} onChange={(e) => setSignup({ ...signup, name: e.target.value })} placeholder="e.g. Megan" className="rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-emerald-100" /></>}
                 <label className="text-sm font-bold">Email</label>
@@ -1156,6 +1162,10 @@ export default function MealPlannerApp() {
                 <label className="text-sm font-bold">Password</label>
                 <input value={signup.password} onChange={(e) => setSignup({ ...signup, password: e.target.value })} placeholder="At least 6 characters" type="password" className="rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-emerald-100" />
                 <button onClick={completeSignup} disabled={!signup.email.trim() || (supabase && signup.password.length < 6)} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{authMode === "signup" ? "Create account" : "Sign in"}</button>
+                <button type="button" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setSyncStatus(authMode === "signup" ? "Sign in mode selected" : "Create account mode selected"); }} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 ring-1 ring-emerald-100">
+                  {authMode === "signup" ? "Already have an account? Sign in" : "Need an account? Create one"}
+                </button>
+                <p className="text-center text-xs font-bold text-zinc-500">{syncStatus}</p>
               </div>
             ) : (
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
