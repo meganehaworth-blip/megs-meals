@@ -486,7 +486,7 @@ const seedEssentials = {
   Drinks: ["Squash", "Cold fusion tea bags", "Tea bags", "Coffee", "Coke", "Lemonade", "Tonic"],
 };
 
-const initialPlanner = { Monday: "", Tuesday: "", Wednesday: "Creamy Mustard Sausage & Leek Casserole", Thursday: "", Friday: "Burgers", Saturday: "Beef Meatballs in Onion Gravy", Sunday: "LEFTOVERS" };
+const initialPlanner = { Monday: "", Tuesday: "", Wednesday: "", Thursday: "", Friday: "", Saturday: "", Sunday: "" };
 
 function load(key, fallback) {
   try {
@@ -658,11 +658,36 @@ function buildShoppingList(planner, meals, essentialChecks) {
     meal.ingredients.forEach((item) => items.push({ ...item, source: meal.name }));
   });
   Object.entries(essentialChecks).forEach(([key, checked]) => {
-    if (!checked) return;
+    if (!checked || key.startsWith("__deleted::")) return;
     const [aisle, name] = key.split("::");
     if (aisle && name) items.push({ name, qty: "", aisle, source: "Essentials" });
   });
   return mergeShoppingItems(items);
+}
+
+function essentialKey(aisle, item) {
+  return `${aisle}::${item}`;
+}
+
+function deletedEssentialKey(aisle, item) {
+  return `__deleted::${aisle}::${item}`;
+}
+
+function getVisibleEssentials(checks) {
+  const grouped = {};
+  Object.entries(seedEssentials).forEach(([aisle, items]) => {
+    grouped[aisle] = items.filter((item) => !checks[deletedEssentialKey(aisle, item)]);
+  });
+
+  Object.entries(checks).forEach(([key, checked]) => {
+    if (!checked || key.startsWith("__deleted::")) return;
+    const [aisle, item] = key.split("::");
+    if (!aisle || !item) return;
+    if (!grouped[aisle]) grouped[aisle] = [];
+    if (!grouped[aisle].includes(item)) grouped[aisle].push(item);
+  });
+
+  return Object.fromEntries(Object.entries(grouped).map(([aisle, items]) => [aisle, items.sort((a, b) => a.localeCompare(b))]));
 }
 
 const COST_LOOKUP = [
@@ -750,6 +775,10 @@ function nextExpandedDay(currentDay, clickedDay) {
   return currentDay === clickedDay ? null : clickedDay;
 }
 
+function nextExpandedMeal(currentMeal, clickedMeal) {
+  return currentMeal === clickedMeal ? null : clickedMeal;
+}
+
 function runMealPlannerTests() {
   const testMeals = [
     recipe("Pasta night", "Vegetarian", "Test", 4, [ing("Pasta", "500g", "Cupboard"), ing("Tomatoes", "1 tin", "Cupboard")], `1. Cook.`),
@@ -764,6 +793,8 @@ function runMealPlannerTests() {
   console.assert(!apples, "Test failed: unchecked essentials should not appear in shopping list");
   console.assert(nextExpandedDay(null, "Monday") === "Monday", "Test failed: clicking closed day should open it");
   console.assert(nextExpandedDay("Monday", "Monday") === null, "Test failed: clicking open day should close it");
+  console.assert(nextExpandedMeal(null, "Burgers") === "Burgers", "Test failed: clicking closed meal should open it");
+  console.assert(nextExpandedMeal("Burgers", "Burgers") === null, "Test failed: clicking open meal should close it");
   console.assert(typeof seedMeals[0].method === "string" && seedMeals[0].method.includes("1."), "Test failed: methods should be readable strings");
   console.assert(cleanMealTitle("Air Fryer Baked Feta Pasta") === "Baked Feta Pasta", "Test failed: Air Fryer should be removed from meal titles");
   console.assert(cleanMealTitle("Slow Cooker Butter Chicken") === "Butter Chicken", "Test failed: Slow Cooker should be removed from meal titles");
@@ -775,7 +806,8 @@ function runMealPlannerTests() {
   console.assert(estimateMealCalories(recipe("Test chicken", "Chicken", "Test", 3, [ing("Chicken breasts", "300g", "Meat & Fish")], "1. Cook.")) === 165, "Test failed: meal calories should divide total by servings");
   console.assert(!seedMeals.some((meal) => ["Butter Chicken", "Chicken Enchiladas", "Sweet Potato Black Bean Burgers", "Carrot Soup", "Spicy Butternut Squash Soup", "Parsnip Soup", "Chicken Tikka with Mint"].includes(meal.name)), "Test failed: deleted meals should not be in seedMeals");
   console.assert(CLOUD_TABLE === "meal_planner_profiles", "Test failed: cloud table name should match Supabase table");
-  console.assert(defaultCloudData({ name: "Test", email: "test@example.com" }).planner.Wednesday === "Creamy Mustard Sausage & Leek Casserole", "Test failed: default cloud data should include starter planner");
+  console.assert(defaultCloudData({ name: "Test", email: "test@example.com" }).planner.Wednesday === "", "Test failed: default cloud planner should start blank");
+  console.assert(getVisibleEssentials({ [deletedEssentialKey("Cupboard", "Pasta")]: true }).Cupboard.includes("Pasta") === false, "Test failed: deleted essentials should be hidden");
 }
 
 function Icon({ children }) {
@@ -810,6 +842,7 @@ export default function MealPlannerApp() {
   const [newMeal, setNewMeal] = useState({ name: "", type: "", category: "Chicken", caloriesPerServing: "", servings: "4", ingredient: "", qty: "", aisle: "Fruit & Veg", method: "" });
   const [newEssential, setNewEssential] = useState({ name: "", aisle: "Fruit & Veg" });
   const [expandedDay, setExpandedDay] = useState(null);
+  const [expandedMeal, setExpandedMeal] = useState(null);
 
   useEffect(() => {
     if (!supabase) save("mp_profile", profile);
@@ -881,6 +914,7 @@ export default function MealPlannerApp() {
     return acc;
   }, {}), [meals, planner]);
   const weeklyCalories = useMemo(() => Object.values(dailyCalories).reduce((sum, kcal) => sum + Number(kcal || 0), 0), [dailyCalories]);
+  const visibleEssentials = useMemo(() => getVisibleEssentials(essentialChecks), [essentialChecks]);
 
   function getMealByName(name) {
     return meals.find((meal) => meal.name === cleanMealTitle(name));
@@ -896,6 +930,10 @@ export default function MealPlannerApp() {
 
   function toggleDay(day) {
     setExpandedDay((currentDay) => nextExpandedDay(currentDay, day));
+  }
+
+  function toggleMeal(mealName) {
+    setExpandedMeal((currentMeal) => nextExpandedMeal(currentMeal, mealName));
   }
 
   function resetWeek() {
@@ -1108,9 +1146,26 @@ export default function MealPlannerApp() {
 
   function addEssential() {
     if (!newEssential.name.trim()) return;
-    const key = `${newEssential.aisle}::${newEssential.name.trim()}`;
-    setEssentialChecks((prev) => ({ ...prev, [key]: true }));
+    const item = newEssential.name.trim();
+    const key = essentialKey(newEssential.aisle, item);
+    const deletedKey = deletedEssentialKey(newEssential.aisle, item);
+    setEssentialChecks((prev) => {
+      const next = { ...prev, [key]: true };
+      delete next[deletedKey];
+      return next;
+    });
     setNewEssential({ name: "", aisle: "Fruit & Veg" });
+  }
+
+  function deleteEssential(aisle, item) {
+    const key = essentialKey(aisle, item);
+    const deletedKey = deletedEssentialKey(aisle, item);
+    setEssentialChecks((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      next[deletedKey] = true;
+      return next;
+    });
   }
 
   return (
@@ -1126,7 +1181,7 @@ export default function MealPlannerApp() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setTab("me")} className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-sm"><Icon>👤</Icon>{profile ? profile.name.split(" ")[0] : "Me"}</button>
-              {profile && <button onClick={resetEverything} className="inline-flex items-center justify-center rounded-2xl bg-zinc-950 px-4 py-3 text-sm font-bold text-white shadow-sm"><Icon>↻</Icon>Reset demo</button>}
+              
             </div>
           </div>
         </header>
@@ -1335,13 +1390,13 @@ export default function MealPlannerApp() {
                 <button onClick={addEssential} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white">＋ Add</button>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                {Object.entries(seedEssentials).map(([aisle, items]) => (
+                {Object.entries(visibleEssentials).map(([aisle, items]) => (
                   <div key={aisle} className="rounded-3xl bg-zinc-50 p-4 ring-1 ring-zinc-100">
                     <h3 className="mb-3 text-lg font-black">{aisleIcon[aisle]} {aisle}</h3>
                     <div className="grid gap-2">
                       {items.map((item) => {
                         const key = `${aisle}::${item}`;
-                        return <label key={key} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-100"><input type="checkbox" checked={!!essentialChecks[key]} onChange={(e) => setEssentialChecks({ ...essentialChecks, [key]: e.target.checked })} className="h-5 w-5" /><span className="font-medium">{item}</span></label>;
+                        return <div key={key} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-100"><input type="checkbox" checked={!!essentialChecks[key]} onChange={(e) => setEssentialChecks({ ...essentialChecks, [key]: e.target.checked })} className="h-5 w-5" /><span className="flex-1 font-medium">{item}</span><button type="button" onClick={() => deleteEssential(aisle, item)} className="rounded-xl bg-zinc-50 px-2 py-1 text-xs font-black text-zinc-500 ring-1 ring-zinc-100">Delete</button></div>;
                       })}
                     </div>
                   </div>
@@ -1375,19 +1430,26 @@ export default function MealPlannerApp() {
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredMeals.map((meal) => (
                   <article key={meal.name} className="rounded-3xl bg-zinc-50 p-4 ring-1 ring-zinc-100">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <button type="button" onClick={() => toggleMeal(meal.name)} className="flex-1 text-left">
                         <h3 className="font-black">{meal.name}</h3>
                         <p className="text-sm text-zinc-500">{categoryIcon[meal.category || inferCategory(meal)] || "🍽️"} {meal.category || inferCategory(meal)} · {meal.type || "Meal"}</p>
                         <div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">{displayMealCalories(meal)} kcal/serving</span><span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-900">Serves {meal.servings || 4}</span></div>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button type="button" onClick={() => toggleMeal(meal.name)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-zinc-500 shadow-sm ring-1 ring-zinc-100">{expandedMeal === meal.name ? "Hide" : "Show"}</button>
+                        <button onClick={() => deleteMeal(meal.name)} className="rounded-xl bg-white p-2 text-zinc-500 shadow-sm ring-1 ring-zinc-100">🗑️</button>
                       </div>
-                      <button onClick={() => deleteMeal(meal.name)} className="rounded-xl bg-white p-2 text-zinc-500 shadow-sm ring-1 ring-zinc-100">🗑️</button>
                     </div>
-                    <div className="space-y-2">
-                      {meal.ingredients.length === 0 ? <p className="text-sm text-zinc-500">No ingredients yet.</p> : meal.ingredients.map((item, index) => <div key={`${item.name}-${index}`} className="rounded-2xl bg-white p-3 text-sm shadow-sm ring-1 ring-zinc-100"><span className="font-bold">{item.name}</span><span className="text-zinc-500"> · {item.qty || "No qty"} · {aisleIcon[item.aisle] || "🛒"} {item.aisle}</span></div>)}
-                      <div className="rounded-2xl bg-orange-50 p-3 text-sm ring-1 ring-orange-100"><p className="mb-1 text-xs font-black uppercase tracking-wide text-orange-800">Method</p><MethodList method={meal.method || "No method added yet."} /></div>
-                    </div>
-                    <button onClick={() => addIngredient(meal.name)} className="mt-3 rounded-2xl bg-white px-4 py-2 text-sm font-bold shadow-sm ring-1 ring-zinc-100">＋ Add ingredient</button>
+                    {expandedMeal === meal.name && (
+                      <>
+                        <div className="mt-3 space-y-2">
+                          {meal.ingredients.length === 0 ? <p className="text-sm text-zinc-500">No ingredients yet.</p> : meal.ingredients.map((item, index) => <div key={`${item.name}-${index}`} className="rounded-2xl bg-white p-3 text-sm shadow-sm ring-1 ring-zinc-100"><span className="font-bold">{item.name}</span><span className="text-zinc-500"> · {item.qty || "No qty"} · {aisleIcon[item.aisle] || "🛒"} {item.aisle}</span></div>)}
+                          <div className="rounded-2xl bg-orange-50 p-3 text-sm ring-1 ring-orange-100"><p className="mb-1 text-xs font-black uppercase tracking-wide text-orange-800">Method</p><MethodList method={meal.method || "No method added yet."} /></div>
+                        </div>
+                        <button onClick={() => addIngredient(meal.name)} className="mt-3 rounded-2xl bg-white px-4 py-2 text-sm font-bold shadow-sm ring-1 ring-zinc-100">＋ Add ingredient</button>
+                      </>
+                    )}
                   </article>
                 ))}
               </div>
