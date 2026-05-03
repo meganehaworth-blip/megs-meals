@@ -1502,13 +1502,13 @@ export default function MealPlannerApp() {
                       <>
                         <div className="mt-3 space-y-2">
                           {meal.ingredients.length === 0 ? <p className="text-sm text-zinc-500">No ingredients yet.</p> : meal.ingredients.map((item, index) => (
-                            <div key={`${item.name}-${index}`} className="flex items-center gap-2 rounded-2xl bg-white p-2 text-sm shadow-sm ring-1 ring-zinc-100">
-                              <input value={item.name} onChange={(e) => editIngredient(meal.name, index, { name: e.target.value })} className="min-w-0 flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-sm font-bold ring-1 ring-zinc-100" placeholder="Ingredient" />
+                            <div key={`${item.name}-${index}`} className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-2 text-sm shadow-sm ring-1 ring-zinc-100">
+                              <input value={item.name} onChange={(e) => editIngredient(meal.name, index, { name: e.target.value })} className="min-w-[140px] flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-sm font-bold ring-1 ring-zinc-100" placeholder="Ingredient" />
                               <input value={item.qty || ""} onChange={(e) => editIngredient(meal.name, index, { qty: e.target.value })} className="w-24 rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-100" placeholder="Qty" />
-                              <select value={item.aisle || "Other"} onChange={(e) => editIngredient(meal.name, index, { aisle: e.target.value })} className="hidden rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-100 sm:block sm:w-36">
+                              <select value={item.aisle || "Other"} onChange={(e) => editIngredient(meal.name, index, { aisle: e.target.value })} className="w-full sm:w-36 rounded-xl bg-zinc-50 px-3 py-2 text-sm ring-1 ring-zinc-100">
                                 {AISLES.map((aisle) => <option key={aisle}>{aisle}</option>)}
                               </select>
-                              <button type="button" aria-label={`Delete ${item.name}`} onClick={() => removeIngredient(meal.name, index)} className="shrink-0 rounded-xl bg-red-50 px-2 py-2 text-sm text-red-700 ring-1 ring-red-100">🗑️</button>
+                              <button type="button" aria-label={`Delete ${item.name}`} onClick={() => removeIngredient(meal.name, index)} className="ml-auto shrink-0 rounded-xl bg-red-50 px-2 py-2 text-sm text-red-700 ring-1 ring-red-100">🗑️</button>
                             </div>
                           ))}
                           <div className="rounded-2xl bg-orange-50 p-3 text-sm ring-1 ring-orange-100">
