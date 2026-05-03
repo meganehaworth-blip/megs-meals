@@ -567,19 +567,30 @@ async function upsertCloudData(userId, email, payload) {
     throw new Error("Not signed in to Supabase yet. Please sign out, then sign in again.");
   }
 
-  const { error } = await supabase.from(CLOUD_TABLE).upsert(
-    {
-      // Do not send user_id from the browser. Supabase fills it using default auth.uid().
-      email,
-      profile: payload.profile,
-      meals: payload.meals,
-      planner: payload.planner,
-      essential_checks: payload.essential_checks,
-      shopping_checks: payload.shopping_checks,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
+  const rowPayload = {
+    email,
+    profile: payload.profile,
+    meals: payload.meals,
+    planner: payload.planner,
+    essential_checks: payload.essential_checks,
+    shopping_checks: payload.shopping_checks,
+    updated_at: new Date().toISOString(),
+  };
+
+  const existing = await fetchCloudData(confirmedUser.id);
+
+  if (existing) {
+    const { error } = await supabase
+      .from(CLOUD_TABLE)
+      .update(rowPayload)
+      .eq("user_id", confirmedUser.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from(CLOUD_TABLE)
+    .insert(rowPayload);
   if (error) throw error;
 }
 
@@ -764,6 +775,7 @@ function runMealPlannerTests() {
   console.assert(estimateMealCalories(recipe("Test chicken", "Chicken", "Test", 3, [ing("Chicken breasts", "300g", "Meat & Fish")], "1. Cook.")) === 165, "Test failed: meal calories should divide total by servings");
   console.assert(!seedMeals.some((meal) => ["Butter Chicken", "Chicken Enchiladas", "Sweet Potato Black Bean Burgers", "Carrot Soup", "Spicy Butternut Squash Soup", "Parsnip Soup", "Chicken Tikka with Mint"].includes(meal.name)), "Test failed: deleted meals should not be in seedMeals");
   console.assert(CLOUD_TABLE === "meal_planner_profiles", "Test failed: cloud table name should match Supabase table");
+  console.assert(defaultCloudData({ name: "Test", email: "test@example.com" }).planner.Wednesday === "Creamy Mustard Sausage & Leek Casserole", "Test failed: default cloud data should include starter planner");
 }
 
 function Icon({ children }) {
@@ -784,21 +796,23 @@ function MethodList({ method, small = false }) {
 
 export default function MealPlannerApp() {
   const [tab, setTab] = useState("planner");
-  const [profile, setProfile] = useState(() => load("mp_profile", null));
+  const [profile, setProfile] = useState(() => (supabase ? null : load("mp_profile", null)));
   const [signup, setSignup] = useState({ name: "", email: "", password: "" });
   const [authUser, setAuthUser] = useState(null);
   const [syncStatus, setSyncStatus] = useState(supabase ? "Supabase ready" : "Local-only mode");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [meals, setMeals] = useState(() => mergeMeals(profile?.email ? loadAccountValue(profile.email, "meals", []) : [], seedMeals));
-  const [planner, setPlanner] = useState(() => (profile?.email ? loadAccountValue(profile.email, "planner", initialPlanner) : initialPlanner));
-  const [essentialChecks, setEssentialChecks] = useState(() => (profile?.email ? loadAccountValue(profile.email, "essential_checks", {}) : {}));
-  const [shoppingChecks, setShoppingChecks] = useState(() => (profile?.email ? loadAccountValue(profile.email, "shopping_checks", {}) : {}));
+  const [meals, setMeals] = useState(() => mergeMeals(!supabase && profile?.email ? loadAccountValue(profile.email, "meals", []) : [], seedMeals));
+  const [planner, setPlanner] = useState(() => (!supabase && profile?.email ? loadAccountValue(profile.email, "planner", initialPlanner) : initialPlanner));
+  const [essentialChecks, setEssentialChecks] = useState(() => (!supabase && profile?.email ? loadAccountValue(profile.email, "essential_checks", {}) : {}));
+  const [shoppingChecks, setShoppingChecks] = useState(() => (!supabase && profile?.email ? loadAccountValue(profile.email, "shopping_checks", {}) : {}));
   const [query, setQuery] = useState("");
   const [newMeal, setNewMeal] = useState({ name: "", type: "", category: "Chicken", caloriesPerServing: "", servings: "4", ingredient: "", qty: "", aisle: "Fruit & Veg", method: "" });
   const [newEssential, setNewEssential] = useState({ name: "", aisle: "Fruit & Veg" });
   const [expandedDay, setExpandedDay] = useState(null);
 
-  useEffect(() => save("mp_profile", profile), [profile]);
+  useEffect(() => {
+    if (!supabase) save("mp_profile", profile);
+  }, [profile]);
   useEffect(() => saveAccountValue(profile?.email, "meals", meals), [profile?.email, meals]);
   useEffect(() => saveAccountValue(profile?.email, "planner", planner), [profile?.email, planner]);
   useEffect(() => saveAccountValue(profile?.email, "essential_checks", essentialChecks), [profile?.email, essentialChecks]);
@@ -815,7 +829,12 @@ export default function MealPlannerApp() {
       if (user?.email) {
         await loadSupabaseAccount(user);
       } else {
+        setAuthUser(null);
         setProfile(null);
+        setMeals(withMealCategories(seedMeals));
+        setPlanner(initialPlanner);
+        setEssentialChecks({});
+        setShoppingChecks({});
         setSyncStatus("Please sign in to sync with Supabase");
       }
     });
@@ -823,7 +842,15 @@ export default function MealPlannerApp() {
       const user = session?.user || null;
       setAuthUser(user);
       if (user?.email) await loadSupabaseAccount(user);
-      if (!user) setSyncStatus("Signed out");
+      if (!user) {
+        setAuthUser(null);
+        setProfile(null);
+        setMeals(withMealCategories(seedMeals));
+        setPlanner(initialPlanner);
+        setEssentialChecks({});
+        setShoppingChecks({});
+        setSyncStatus("Signed out");
+      }
     });
     return () => {
       mounted = false;
@@ -1000,9 +1027,16 @@ export default function MealPlannerApp() {
 
   async function signOut() {
     if (supabase) await supabase.auth.signOut();
+    try {
+      localStorage.removeItem("mp_profile");
+    } catch {}
     setAuthUser(null);
     setProfile(null);
     setSignup({ name: "", email: "", password: "" });
+    setMeals(withMealCategories(seedMeals));
+    setPlanner(initialPlanner);
+    setEssentialChecks({});
+    setShoppingChecks({});
     setSyncStatus(supabase ? "Signed out" : "Local-only mode");
     setTab("planner");
   }
