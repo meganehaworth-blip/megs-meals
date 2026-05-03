@@ -969,6 +969,31 @@ export default function MealPlannerApp() {
     }
   }
 
+  async function sendPasswordReset() {
+    if (!supabase) {
+      setSyncStatus("Password reset only works when Supabase is connected.");
+      return;
+    }
+    if (!signup.email.trim()) {
+      setSyncStatus("Enter your email address first, then click reset password.");
+      return;
+    }
+    try {
+      setIsSyncing(true);
+      setSyncStatus("Sending password reset email...");
+      const { error } = await supabase.auth.resetPasswordForEmail(signup.email.trim().toLowerCase(), {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      setSyncStatus("Password reset email sent. Check your inbox and junk folder.");
+    } catch (error) {
+      console.error(error);
+      setSyncStatus(`Password reset error: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
   async function completeSignup() {
     if (!signup.email.trim()) return;
     const email = signup.email.trim().toLowerCase();
@@ -1019,7 +1044,14 @@ export default function MealPlannerApp() {
         }
       } catch (error) {
         console.error(error);
-        setSyncStatus(`${authMode === "signup" ? "Create account" : "Sign in"} error: ${error.message}`);
+        if (error.message?.toLowerCase().includes("invalid login credentials")) {
+          setSyncStatus("Incorrect email or password. Try again, or use reset password below.");
+        } else if (error.message?.toLowerCase().includes("user already registered")) {
+          setSyncStatus("This email already has an account. Switch to Sign in, or reset your password.");
+          setAuthMode("signin");
+        } else {
+          setSyncStatus(`${authMode === "signup" ? "Create account" : "Sign in"} error: ${error.message}`);
+        }
       } finally {
         setIsSyncing(false);
       }
@@ -1130,6 +1162,11 @@ export default function MealPlannerApp() {
                 <button type="button" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setSyncStatus(authMode === "signup" ? "Sign in mode selected" : "Create account mode selected"); }} className="rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-bold text-zinc-700">
                   {authMode === "signup" ? "Already have an account? Sign in" : "Need an account? Create one"}
                 </button>
+                {authMode === "signin" && (
+                  <button type="button" onClick={sendPasswordReset} disabled={!signup.email.trim() || isSyncing} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-emerald-700 shadow-sm ring-1 ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">
+                    Reset password
+                  </button>
+                )}
                 <p className="text-center text-xs font-bold text-zinc-500">{syncStatus}</p>
               </div>
               <p className="mt-4 text-xs text-zinc-500">Supabase mode uses real email/password auth and cloud data. Local-only mode appears when your Supabase environment variables are missing.</p>
@@ -1165,6 +1202,11 @@ export default function MealPlannerApp() {
                 <button type="button" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setSyncStatus(authMode === "signup" ? "Sign in mode selected" : "Create account mode selected"); }} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 ring-1 ring-emerald-100">
                   {authMode === "signup" ? "Already have an account? Sign in" : "Need an account? Create one"}
                 </button>
+                {authMode === "signin" && (
+                  <button type="button" onClick={sendPasswordReset} disabled={!signup.email.trim() || isSyncing} className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-emerald-700 ring-1 ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">
+                    Reset password
+                  </button>
+                )}
                 <p className="text-center text-xs font-bold text-zinc-500">{syncStatus}</p>
               </div>
             ) : (
