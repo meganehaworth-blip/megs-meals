@@ -1183,6 +1183,59 @@ function guessAisle(name) {
 }
 
 function parseRecipeText(rawText) {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+
+  const headingIndex = (words) =>
+    lines.findIndex((line) => words.some((word) => normalise(line).includes(word)));
+
+  const ingredientsStart = headingIndex(["ingredients", "you need", "shopping list"]);
+  const methodStart = headingIndex(["method", "instructions", "directions", "steps"]);
+
+  const title = cleanMealTitle(
+    lines.find((line, index) =>
+      index !== ingredientsStart &&
+      index !== methodStart &&
+      !normalise(line).includes("ingredients") &&
+      !normalise(line).includes("method")
+    ) || "Imported recipe"
+  );
+
+  const ingredientSource =
+    ingredientsStart >= 0
+      ? lines.slice(ingredientsStart + 1, methodStart > ingredientsStart ? methodStart : undefined)
+      : lines.filter((line) => /\d|g\b|kg\b|ml\b|tbsp\b|tsp\b|tin\b|pack\b|clove\b|cup\b/i.test(line));
+
+  const methodSource =
+    methodStart >= 0
+      ? lines.slice(methodStart + 1)
+      : lines.filter((line) => /cook|fry|bake|roast|mix|stir|add|serve|simmer|boil|chop|slice|heat/i.test(line));
+
+  const ingredients = ingredientSource
+    .filter((line) => !/method|instructions|directions|steps/i.test(line))
+    .map((line) => {
+      const qty = line.match(/(\d+[\d/.]*\s?(g|kg|ml|l|tbsp|tsp|cups?|tins?|packs?|cloves?)?)/i)?.[0] || "";
+      const name = line.replace(qty, "").replace(/^[:\-–]\s*/, "").trim() || line;
+      return ing(name, qty, guessAisle(name));
+    })
+    .filter((item) => item.name);
+
+  const method = methodSource.length
+    ? methodSource.map((line, index) => `${index + 1}. ${line.replace(/^\d+[.)]\s*/, "")}`).join("\n")
+    : "1. Add method steps here.";
+
+  return {
+    name: title,
+    category: "Other",
+    type: "Imported",
+    servings: 4,
+    ingredients,
+    method,
+    caloriesPerServing: 0,
+  };
+}
   const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const title = cleanMealTitle(lines[0] || "Imported recipe");
 
