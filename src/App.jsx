@@ -1,3 +1,4 @@
+import Tesseract from "tesseract.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -870,6 +871,9 @@ export default function MealPlannerApp() {
   const [query, setQuery] = useState("");
   const [plannerMealSearch, setPlannerMealSearch] = useState("");
   const [newMeal, setNewMeal] = useState({ name: "", type: "", category: "Chicken", caloriesPerServing: "", servings: "4", ingredient: "", qty: "", aisle: "Fruit & Veg", method: "" });
+  const [isImportingRecipe, setIsImportingRecipe] = useState(false);
+  const [importStatus, setImportStatus] = useState("");
+  const [importedRecipe, setImportedRecipe] = useState(null);
   const [newEssential, setNewEssential] = useState({ name: "", aisle: "Fruit & Veg" });
   const [expandedDay, setExpandedDay] = useState(null);
   const [expandedMeal, setExpandedMeal] = useState(null);
@@ -1164,7 +1168,79 @@ export default function MealPlannerApp() {
     setSyncStatus(supabase ? "Signed out" : "Local-only mode");
     setTab("planner");
   }
+function guessAisle(name) {
+  const text = normalise(name);
 
+  if (["chicken", "beef", "pork", "sausage", "prawn", "fish", "mince"].some((word) => text.includes(word))) return "Meat & Fish";
+  if (["cheese", "milk", "cream", "yoghurt", "feta", "halloumi", "butter"].some((word) => text.includes(word))) return "Chilled / Dairy";
+  if (["onion", "pepper", "carrot", "potato", "tomato", "garlic", "leek", "mushroom", "lime", "lemon"].some((word) => text.includes(word))) return "Fruit & Veg";
+  if (["bread", "wrap", "roll", "naan"].some((word) => text.includes(word))) return "Bakery";
+  if (["sauce", "paste", "oil", "vinegar", "honey", "mustard"].some((word) => text.includes(word))) return "Sauces";
+  if (["paprika", "cumin", "oregano", "salt", "pepper", "spice", "herb"].some((word) => text.includes(word))) return "Herbs & Spices";
+  if (["chips", "peas", "frozen"].some((word) => text.includes(word))) return "Frozen";
+
+  return "Cupboard";
+}
+
+function parseRecipeText(rawText) {
+  const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const title = cleanMealTitle(lines[0] || "Imported recipe");
+
+  const ingredients = lines
+    .filter((line) => /\d|g\b|kg\b|ml\b|tbsp\b|tsp\b|tin\b|pack\b|clove\b/i.test(line))
+    .map((line) => {
+      const qty = line.match(/(\d+[\d/.]*\s?(g|kg|ml|l|tbsp|tsp|tins?|packs?|cloves?)?)/i)?.[0] || "";
+      const name = line.replace(qty, "").replace(/^[-•*]\s*/, "").trim() || line;
+      return ing(name, qty, guessAisle(name));
+    });
+
+  return {
+    name: title,
+    category: "Other",
+    type: "Imported",
+    servings: 4,
+    ingredients,
+    method: lines.map((line, index) => `${index + 1}. ${line}`).join("\n"),
+    caloriesPerServing: 0,
+  };
+}
+
+async function importRecipeFromImage(file) {
+  if (!file) return;
+
+  setIsImportingRecipe(true);
+  setImportStatus("Reading screenshot...");
+
+  try {
+    const result = await Tesseract.recognize(file, "eng");
+    setImportedRecipe(parseRecipeText(result.data.text));
+    setImportStatus("Recipe ready to review");
+  } catch (error) {
+    setImportStatus("Sorry, I could not read that screenshot.");
+  } finally {
+    setIsImportingRecipe(false);
+  }
+}
+
+function saveImportedRecipe() {
+  if (!importedRecipe?.name) return;
+
+  setMeals((prev) => [
+    ...prev,
+    recipe(
+      importedRecipe.name,
+      importedRecipe.category,
+      importedRecipe.type,
+      Number(importedRecipe.servings) || 4,
+      importedRecipe.ingredients || [],
+      importedRecipe.method || "1. Add method steps here.",
+      0
+    ),
+  ]);
+
+  setImportedRecipe(null);
+  setImportStatus("Recipe saved");
+}
   function addMeal() {
     if (!newMeal.name.trim()) return;
     const ingredient = newMeal.ingredient.trim() ? [ing(newMeal.ingredient.trim(), newMeal.qty.trim(), newMeal.aisle)] : [];
@@ -1470,6 +1546,46 @@ export default function MealPlannerApp() {
                 <div><h2 className="text-xl font-black">📝 Meal database</h2><p className="text-sm text-zinc-600">Add meals and ingredients. These become available in the weekly planner.</p></div>
                 <div className="relative"><span className="absolute left-3 top-3 text-zinc-400">🔎</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search meals" className="w-full rounded-2xl bg-zinc-50 py-3 pl-9 pr-4 text-sm ring-1 ring-zinc-200" /></div>
               </div>
+<div className="mb-5 rounded-3xl bg-sky-50 p-4 ring-1 ring-sky-100">
+  <h3 className="mb-2 font-black">Import from screenshot</h3>
+
+  <input
+    type="file"
+    accept="image/*"
+    onChange={(e) => importRecipeFromImage(e.target.files?.[0])}
+    className="w-full rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
+  />
+
+  <p className="mt-2 text-sm font-bold text-sky-800">
+    {isImportingRecipe ? importStatus : importStatus || "Upload a recipe screenshot, review it, then save it."}
+  </p>
+
+  {importedRecipe && (
+    <div className="mt-4 grid gap-2">
+      <input
+        value={importedRecipe.name}
+        onChange={(e) => setImportedRecipe({ ...importedRecipe, name: e.target.value })}
+        className="rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
+      />
+
+      <textarea
+        value={importedRecipe.ingredients.map((item) => `${item.name} | ${item.qty} | ${item.aisle}`).join("\n")}
+        readOnly
+        className="min-h-32 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
+      />
+
+      <textarea
+        value={importedRecipe.method}
+        onChange={(e) => setImportedRecipe({ ...importedRecipe, method: e.target.value })}
+        className="min-h-32 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
+      />
+
+      <button onClick={saveImportedRecipe} className="rounded-2xl bg-sky-600 px-4 py-3 text-sm font-bold text-white">
+        Save imported recipe
+      </button>
+    </div>
+  )}
+</div>
               <div className="mb-5 rounded-3xl bg-emerald-50 p-4 ring-1 ring-emerald-100">
                 <h3 className="mb-3 font-black">✏️ Add new meal</h3>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
