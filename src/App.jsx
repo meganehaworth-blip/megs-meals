@@ -1212,11 +1212,29 @@ async function importRecipeFromImage(file) {
   setImportStatus("Reading screenshot...");
 
   try {
-    const result = await Tesseract.recognize(file, "eng");
-    setImportedRecipe(parseRecipeText(result.data.text));
+    const result = await Tesseract.recognize(file, "eng", {
+      workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
+      corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/tesseract-core.wasm.js",
+      langPath: "https://tessdata.projectnaptha.com/4.0.0",
+      logger: (message) => {
+        if (message.status === "recognizing text") {
+          setImportStatus(`Reading screenshot ${Math.round(message.progress * 100)}%`);
+        }
+      },
+    });
+
+    const text = result.data.text?.trim();
+
+    if (!text) {
+      setImportStatus("I could not find any readable text in that image.");
+      return;
+    }
+
+    setImportedRecipe(parseRecipeText(text));
     setImportStatus("Recipe ready to review");
   } catch (error) {
-    setImportStatus("Sorry, I could not read that screenshot.");
+    console.error("Screenshot import failed:", error);
+    setImportStatus("Could not read that image. Try a clearer screenshot with recipe text visible.");
   } finally {
     setIsImportingRecipe(false);
   }
@@ -1569,10 +1587,19 @@ function saveImportedRecipe() {
       />
 
       <textarea
-        value={importedRecipe.ingredients.map((item) => `${item.name} | ${item.qty} | ${item.aisle}`).join("\n")}
-        readOnly
-        className="min-h-32 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
-      />
+  value={importedRecipe.ingredients.map((item) => `${item.name} | ${item.qty} | ${item.aisle}`).join("\n")}
+  onChange={(e) => setImportedRecipe({
+    ...importedRecipe,
+    ingredients: e.target.value
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        const [name = "", qty = "", aisle = "Other"] = line.split("|").map((part) => part.trim());
+        return ing(name, qty, AISLES.includes(aisle) ? aisle : "Other");
+      }),
+  })}
+  className="min-h-32 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-sky-100"
+/>
 
       <textarea
         value={importedRecipe.method}
